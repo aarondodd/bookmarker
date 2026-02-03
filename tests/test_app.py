@@ -59,3 +59,66 @@ class TestBookmarkerApp:
             assert ThemeManager.is_dark_mode() != original
             app._toggle_theme()  # Restore
             app._tray.hide()
+
+    def test_add_bookmark_from_clipboard_with_valid_url(self, qapp, isolate_config):
+        with patch("bookmarker.app.check_for_updates", return_value=None):
+            from bookmarker.app import BookmarkerApp
+            from PyQt6.QtWidgets import QApplication
+            app = BookmarkerApp()
+            # Set clipboard to a valid URL
+            clipboard = QApplication.clipboard()
+            clipboard.setText("https://example.com/test")
+            initial_count = len(app.store.all_bookmarks())
+            app._add_bookmark_from_clipboard()
+            # Should have added one bookmark
+            assert len(app.store.all_bookmarks()) == initial_count + 1
+            # Editor should be open
+            assert app._editor is not None
+            app._tray.hide()
+            if app._editor:
+                app._editor.close()
+
+    def test_add_bookmark_from_clipboard_adds_https_prefix(self, qapp, isolate_config):
+        with patch("bookmarker.app.check_for_updates", return_value=None):
+            from bookmarker.app import BookmarkerApp
+            from PyQt6.QtWidgets import QApplication
+            app = BookmarkerApp()
+            clipboard = QApplication.clipboard()
+            clipboard.setText("example.com/page")
+            app._add_bookmark_from_clipboard()
+            # Should have added with https prefix
+            matches = app.store.find_by_url("https://example.com/page")
+            assert len(matches) == 1
+            app._tray.hide()
+            if app._editor:
+                app._editor.close()
+
+    def test_add_bookmark_from_clipboard_empty_shows_warning(self, qapp, isolate_config):
+        with patch("bookmarker.app.check_for_updates", return_value=None):
+            from bookmarker.app import BookmarkerApp
+            from PyQt6.QtWidgets import QApplication, QMessageBox
+            app = BookmarkerApp()
+            clipboard = QApplication.clipboard()
+            clipboard.setText("")
+            initial_count = len(app.store.all_bookmarks())
+            with patch.object(QMessageBox, "warning") as mock_warning:
+                app._add_bookmark_from_clipboard()
+                mock_warning.assert_called_once()
+            # Should not have added any bookmark
+            assert len(app.store.all_bookmarks()) == initial_count
+            app._tray.hide()
+
+    def test_add_bookmark_from_clipboard_invalid_shows_warning(self, qapp, isolate_config):
+        with patch("bookmarker.app.check_for_updates", return_value=None):
+            from bookmarker.app import BookmarkerApp
+            from PyQt6.QtWidgets import QApplication, QMessageBox
+            app = BookmarkerApp()
+            clipboard = QApplication.clipboard()
+            clipboard.setText("not a url at all")
+            initial_count = len(app.store.all_bookmarks())
+            with patch.object(QMessageBox, "warning") as mock_warning:
+                app._add_bookmark_from_clipboard()
+                mock_warning.assert_called_once()
+            # Should not have added any bookmark
+            assert len(app.store.all_bookmarks()) == initial_count
+            app._tray.hide()

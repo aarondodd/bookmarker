@@ -196,12 +196,48 @@ class BookmarkEditorWindow(QMainWindow):
 
     def _add_bookmark(self):
         """Add a new bookmark."""
+        self.add_bookmark_with_url("https://")
+
+    def add_bookmark_with_url(self, url: str, title: str = "New Bookmark"):
+        """Add a new bookmark with a specific URL and optionally select it for editing.
+
+        Args:
+            url: The URL for the new bookmark.
+            title: The title for the new bookmark.
+        """
         parent_id = self._folder_combo.currentData()
-        bm = Bookmark(title="New Bookmark", url="https://", type=BookmarkType.URL)
+        bm = Bookmark(title=title, url=url, type=BookmarkType.URL)
         self.store.add(bm, parent_id=parent_id)
         self.store.save()
         self._populate_tree()
         self.store_changed.emit()
+
+        # Select the newly added bookmark in the tree and focus the title field
+        self._select_bookmark_by_id(bm.id)
+        self._title_edit.setFocus()
+        self._title_edit.selectAll()
+
+    def _select_bookmark_by_id(self, bookmark_id: str):
+        """Select a bookmark in the tree by its ID."""
+        def find_item(parent_item, target_id):
+            for i in range(parent_item.childCount()):
+                child = parent_item.child(i)
+                if child.data(0, Qt.ItemDataRole.UserRole) == target_id:
+                    return child
+                found = find_item(child, target_id)
+                if found:
+                    return found
+            return None
+
+        for i in range(self._tree.topLevelItemCount()):
+            top_item = self._tree.topLevelItem(i)
+            if top_item.data(0, Qt.ItemDataRole.UserRole) == bookmark_id:
+                self._tree.setCurrentItem(top_item)
+                return
+            found = find_item(top_item, bookmark_id)
+            if found:
+                self._tree.setCurrentItem(found)
+                return
 
     def _add_folder(self):
         """Add a new folder."""

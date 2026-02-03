@@ -87,6 +87,9 @@ class BookmarkerApp(QMainWindow):
         open_editor_action = menu.addAction("Open Editor")
         open_editor_action.triggered.connect(self._open_editor)
 
+        add_from_clipboard_action = menu.addAction("Add Bookmark from Clipboard")
+        add_from_clipboard_action.triggered.connect(self._add_bookmark_from_clipboard)
+
         menu.addSeparator()
 
         import_action = menu.addAction("Import Bookmarks")
@@ -189,6 +192,39 @@ class BookmarkerApp(QMainWindow):
         self._editor.show()
         self._editor.raise_()
         self._editor.activateWindow()
+
+    def _add_bookmark_from_clipboard(self):
+        """Add a new bookmark using the clipboard contents as URL."""
+        clipboard = QApplication.clipboard()
+        text = clipboard.text().strip()
+
+        if not text:
+            QMessageBox.warning(
+                None, "Empty Clipboard",
+                "The clipboard is empty. Copy a URL first.")
+            return
+
+        # Basic URL validation - check if it looks like a URL
+        if not (text.startswith("http://") or text.startswith("https://") or
+                text.startswith("file://") or "." in text):
+            QMessageBox.warning(
+                None, "Invalid URL",
+                f"The clipboard contents don't appear to be a valid URL:\n{text[:100]}")
+            return
+
+        # Add http:// prefix if missing
+        if not text.startswith(("http://", "https://", "file://")):
+            text = "https://" + text
+
+        # Open editor with the URL pre-filled
+        if self._editor is None or not self._editor.isVisible():
+            self._editor = BookmarkEditorWindow(self.store)
+            self._editor.store_changed.connect(self._on_store_changed)
+
+        self._editor.show()
+        self._editor.raise_()
+        self._editor.activateWindow()
+        self._editor.add_bookmark_with_url(text)
 
     def _on_store_changed(self):
         """Handle store changes from the editor."""

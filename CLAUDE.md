@@ -49,6 +49,7 @@ Cross-browser bookmark manager with a unified internal store.
 - **Single-click**: Opens Quick Launch window for fast bookmark search/launch
 - **Double-click**: Opens full Bookmark Editor
 - **Right-click**: Context menu with Launch submenu, editor, sync options
+- **Add Bookmark from Clipboard**: Creates a new bookmark using clipboard URL
 
 ### Quick Launch Window
 - Centered popup window for fast bookmark access

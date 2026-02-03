@@ -66,3 +66,32 @@ class TestBookmarkEditorWindow:
         editor.refresh()
         bar_item = editor._tree.topLevelItem(0)
         assert bar_item.childCount() == 3
+
+    def test_add_bookmark_with_url(self, qapp, store_with_data):
+        from bookmarker.ui.editor import BookmarkEditorWindow
+        editor = BookmarkEditorWindow(store_with_data)
+        initial_count = len(store_with_data.all_bookmarks())
+        editor.add_bookmark_with_url("https://test.com", "Test Site")
+        assert len(store_with_data.all_bookmarks()) == initial_count + 1
+        # Find the new bookmark
+        matches = store_with_data.find_by_url("https://test.com")
+        assert len(matches) == 1
+        assert matches[0].title == "Test Site"
+
+    def test_add_bookmark_with_url_selects_in_tree(self, qapp, store_with_data):
+        from bookmarker.ui.editor import BookmarkEditorWindow
+        editor = BookmarkEditorWindow(store_with_data)
+        editor.add_bookmark_with_url("https://newsite.com", "New Site")
+        # The URL edit should show the new URL
+        assert editor._url_edit.text() == "https://newsite.com"
+        # The current item should be the new bookmark
+        assert editor._current_item is not None
+        assert editor._current_item.url == "https://newsite.com"
+
+    def test_add_bookmark_with_url_default_title(self, qapp, store_with_data):
+        from bookmarker.ui.editor import BookmarkEditorWindow
+        editor = BookmarkEditorWindow(store_with_data)
+        editor.add_bookmark_with_url("https://example.org")
+        # Should use default title
+        assert editor._current_item.title == "New Bookmark"
+        assert editor._title_edit.text() == "New Bookmark"
