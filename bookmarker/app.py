@@ -25,6 +25,9 @@ from .ui.browser_dialog import BrowserSelectionDialog
 from .ui.debug_dialog import DebugConfirmDialog
 from .ui.sync_dialog import SyncProgressDialog
 from .ui.settings_dialog import SettingsDialog
+from .ui.quick_launch import QuickLaunchWindow
+from .utils.launcher import launch_bookmark
+from .models.bookmark import BookmarkType
 
 
 class UpgradeWorker(ImportWorker.__bases__[0]):
@@ -53,6 +56,7 @@ class BookmarkerApp(QMainWindow):
         self.store = BookmarkStore.load()
         self._editor: Optional[BookmarkEditorWindow] = None
         self._sync_dialog: Optional[SyncProgressDialog] = None
+        self._quick_launch: Optional[QuickLaunchWindow] = None
 
         # Apply theme
         ui_config = get_ui_config()
@@ -73,6 +77,12 @@ class BookmarkerApp(QMainWindow):
         self._tray.activated.connect(self._on_tray_activated)
 
         menu = QMenu()
+
+        # Launch submenu - bookmark hierarchy
+        self._launch_menu = menu.addMenu("Launch")
+        self._launch_menu.aboutToShow.connect(self._populate_launch_menu)
+
+        menu.addSeparator()
 
         open_editor_action = menu.addAction("Open Editor")
         open_editor_action.triggered.connect(self._open_editor)
@@ -112,14 +122,64 @@ class BookmarkerApp(QMainWindow):
         self._tray.setContextMenu(menu)
         self._tray.show()
 
+    def _populate_launch_menu(self):
+        """Populate the Launch submenu with bookmark hierarchy."""
+        self._launch_menu.clear()
+
+        # Add bookmarks from all roots
+        for root_name, root_bm in self.store.roots.items():
+            for child in sorted(root_bm.children, key=lambda x: x.position):
+                self._add_bookmark_to_menu(self._launch_menu, child)
+
+    def _add_bookmark_to_menu(self, menu: QMenu, bookmark):
+        """Add a bookmark or folder to a menu."""
+        if bookmark.type == BookmarkType.FOLDER:
+            # Create submenu for folder
+            submenu = menu.addMenu(f"\U0001F4C1 {bookmark.title}")
+            for child in sorted(bookmark.children, key=lambda x: x.position):
+                self._add_bookmark_to_menu(submenu, child)
+        else:
+            # Add action for bookmark
+            action = menu.addAction(f"\U0001F517 {bookmark.title}")
+            action.setToolTip(bookmark.url)
+            # Use lambda with default argument to capture bookmark
+            action.triggered.connect(
+                lambda checked, bm=bookmark: self._launch_bookmark_from_menu(bm)
+            )
+
+    def _launch_bookmark_from_menu(self, bookmark):
+        """Launch a bookmark from the context menu."""
+        launch_bookmark(bookmark)
+
     def _update_tray_icon(self, state: str = "normal"):
         """Update the tray icon based on state."""
         icon = generate_tray_icon(state, ThemeManager.is_dark_mode())
         self._tray.setIcon(icon)
 
     def _on_tray_activated(self, reason):
-        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
+            # Single click - show quick launch
+            self._open_quick_launch()
+        elif reason == QSystemTrayIcon.ActivationReason.DoubleClick:
             self._open_editor()
+
+    def _open_quick_launch(self):
+        """Open the quick launch window."""
+        if self._quick_launch is None or not self._quick_launch.isVisible():
+            self._quick_launch = QuickLaunchWindow(self.store)
+            self._quick_launch.closed.connect(self._on_quick_launch_closed)
+        else:
+            # If already visible, just focus it
+            self._quick_launch.raise_()
+            self._quick_launch.activateWindow()
+            return
+        self._quick_launch.show()
+        self._quick_launch.raise_()
+        self._quick_launch.activateWindow()
+
+    def _on_quick_launch_closed(self):
+        """Handle quick launch window closing."""
+        self._quick_launch = None
 
     def _open_editor(self):
         """Open the bookmark editor window."""

@@ -10,8 +10,8 @@ Cross-browser bookmark manager with a unified internal store.
   - `version.py` - Version string
   - `models/bookmark.py` - Bookmark dataclass + BookmarkStore
   - `operations/` - Browser I/O (chrome, edge, firefox, sync, importer, exporter)
-  - `utils/` - Config, icon, theme, updater
-  - `ui/` - Editor, dialogs
+  - `utils/` - Config, icon, theme, updater, launcher
+  - `ui/` - Editor, dialogs, quick_launch
 - `tests/` - pytest test suite
 
 ## Commands
@@ -42,3 +42,29 @@ Cross-browser bookmark manager with a unified internal store.
 - Browser must be closed for write operations
 - Chrome/Edge use JSON files with MD5 checksum
 - Firefox uses SQLite with safe backup-based reading
+
+## User Interface
+
+### System Tray
+- **Single-click**: Opens Quick Launch window for fast bookmark search/launch
+- **Double-click**: Opens full Bookmark Editor
+- **Right-click**: Context menu with Launch submenu, editor, sync options
+
+### Quick Launch Window
+- Centered popup window for fast bookmark access
+- Search box filters bookmarks by title/URL in real-time
+- Folder navigation with back/home buttons
+- Press Enter to launch selected bookmark
+- Press Escape to close
+- Clicking a folder navigates into it
+- Clicking a bookmark launches it
+
+### Launch Menu (Context Menu)
+- Hierarchical submenu showing all bookmarks and folders
+- Hover over folders to expand them
+- Click a bookmark to open it in the appropriate browser
+
+### Bookmark Launching
+- Bookmarks open in the system default browser by default
+- Set "Open in" preference per bookmark (Chrome, Edge, Firefox)
+- Falls back to default browser if preferred browser not found
