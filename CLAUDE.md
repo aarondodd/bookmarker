@@ -69,3 +69,26 @@ Cross-browser bookmark manager with a unified internal store.
 - Bookmarks open in the system default browser by default
 - Set "Open in" preference per bookmark (Chrome, Edge, Firefox)
 - Falls back to default browser if preferred browser not found
+
+## File Watching
+
+- Application watches `~/.bookmarker/bookmarks.json` for external changes
+- Uses QFileSystemWatcher with 100ms debounce
+- Pauses during self-save to avoid false triggers
+- Shows tray notification and refreshes UI on reload
+
+## JSON Import/Export
+
+### Export
+- Menu: "Export Bookmarks to JSON..."
+- Exports internal store to user-specified JSON file
+- Creates a portable backup of all bookmarks
+
+### Import
+- Menu: "Import Bookmarks from JSON..."
+- Two modes:
+  - **Overwrite**: Replace entire store (with confirmation)
+  - **Merge**: Add new bookmarks, resolve conflicts
+- Preview dialog shows items to add and conflicts
+- Conflict detection: Same URL in same folder path
+- Backup created before any import
