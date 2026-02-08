@@ -17,7 +17,9 @@ from .operations.sync import SyncWorker, SyncAction, plan_sync, execute_sync
 from .operations.browser_detect import detect_browsers
 from .utils.config import (
     get_ui_config, set_ui_config, get_sync_config, create_default_config,
+    get_hotkey_config,
 )
+from .utils.hotkey import GlobalHotkeyManager, DEFAULT_HOTKEY, PYNPUT_AVAILABLE
 from .utils.icon import generate_tray_icon
 from .utils.theme import ThemeManager
 from .utils.updater import check_for_updates, upgrade
@@ -75,11 +77,25 @@ class BookmarkerApp(QMainWindow):
         self._file_watcher.file_changed.connect(self._on_external_file_change)
         self._file_watcher.start()
 
+        # Global hotkey for Quick Launch
+        self._hotkey_manager = None
+        self._setup_hotkey()
+
         # System tray
         self._setup_tray()
 
         # Auto-check for updates after 3 seconds
         QTimer.singleShot(3000, self._auto_check_for_updates)
+
+    def _setup_hotkey(self):
+        """Set up the global hotkey for Quick Launch."""
+        hotkey_config = get_hotkey_config()
+        enabled = hotkey_config.get("enabled", True)
+        shortcut = hotkey_config.get("shortcut", DEFAULT_HOTKEY)
+
+        if enabled and PYNPUT_AVAILABLE:
+            self._hotkey_manager = GlobalHotkeyManager(shortcut, self._open_quick_launch)
+            self._hotkey_manager.start()
 
     def _setup_tray(self):
         """Set up the system tray icon and context menu."""
@@ -393,6 +409,19 @@ class BookmarkerApp(QMainWindow):
             ThemeManager.apply(dialog.is_dark_mode())
             self._update_tray_icon()
 
+            # Update hotkey
+            if dialog.is_hotkey_enabled() and PYNPUT_AVAILABLE:
+                shortcut = dialog.hotkey_shortcut()
+                if self._hotkey_manager is None:
+                    self._hotkey_manager = GlobalHotkeyManager(
+                        shortcut, self._open_quick_launch)
+                    self._hotkey_manager.start()
+                else:
+                    self._hotkey_manager.update_hotkey(shortcut)
+            elif self._hotkey_manager is not None:
+                self._hotkey_manager.stop()
+                self._hotkey_manager = None
+
     def _toggle_theme(self):
         """Toggle between dark and light mode."""
         dark = not ThemeManager.is_dark_mode()
@@ -579,6 +608,8 @@ class BookmarkerApp(QMainWindow):
 
     def _quit(self):
         """Save and quit."""
+        if self._hotkey_manager is not None:
+            self._hotkey_manager.stop()
         self._file_watcher.stop()
         self.store.save()
         self._tray.hide()

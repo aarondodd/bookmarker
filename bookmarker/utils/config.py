@@ -119,6 +119,19 @@ def set_sync_config(settings: Dict[str, Any]) -> Optional[str]:
     return save_config(config)
 
 
+def get_hotkey_config() -> Dict[str, Any]:
+    """Get hotkey configuration settings."""
+    config = load_config()
+    return config.get("hotkey", {})
+
+
+def set_hotkey_config(settings: Dict[str, Any]) -> Optional[str]:
+    """Set hotkey configuration settings."""
+    config = load_config()
+    config["hotkey"] = settings
+    return save_config(config)
+
+
 def get_last_version_check() -> Optional[datetime]:
     """Get the timestamp of the last version check."""
     check_file = get_version_check_file()
@@ -155,6 +168,10 @@ def create_default_config() -> None:
         },
         "sync": {
             "debug_mode": False,
+        },
+        "hotkey": {
+            "enabled": True,
+            "shortcut": "<ctrl>+<alt>+b",
         },
     }
     save_config(default_config)

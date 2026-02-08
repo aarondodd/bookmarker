@@ -14,6 +14,8 @@ from bookmarker.utils.config import (
     set_ui_config,
     get_sync_config,
     set_sync_config,
+    get_hotkey_config,
+    set_hotkey_config,
     get_last_version_check,
     record_version_check,
     create_default_config,
@@ -88,6 +90,28 @@ class TestSyncConfig:
         assert config["debug_mode"] is True
 
 
+class TestHotkeyConfig:
+    def test_get_default_hotkey_config(self, isolate_config):
+        config = get_hotkey_config()
+        assert config == {}
+
+    def test_set_and_get_hotkey_config(self, isolate_config):
+        set_hotkey_config({"enabled": True, "shortcut": "<ctrl>+<alt>+b"})
+        config = get_hotkey_config()
+        assert config["enabled"] is True
+        assert config["shortcut"] == "<ctrl>+<alt>+b"
+
+    def test_disable_hotkey(self, isolate_config):
+        set_hotkey_config({"enabled": False, "shortcut": "<ctrl>+<alt>+b"})
+        config = get_hotkey_config()
+        assert config["enabled"] is False
+
+    def test_change_shortcut(self, isolate_config):
+        set_hotkey_config({"enabled": True, "shortcut": "<ctrl>+<shift>+l"})
+        config = get_hotkey_config()
+        assert config["shortcut"] == "<ctrl>+<shift>+l"
+
+
 class TestVersionCheck:
     def test_no_previous_check(self, isolate_config):
         assert get_last_version_check() is None
@@ -105,6 +129,9 @@ class TestDefaultConfig:
         config = load_config()
         assert "ui" in config
         assert config["ui"]["dark_mode"] is False
+        assert "hotkey" in config
+        assert config["hotkey"]["enabled"] is True
+        assert config["hotkey"]["shortcut"] == "<ctrl>+<alt>+b"
 
     def test_does_not_overwrite(self, isolate_config):
         save_config({"ui": {"dark_mode": True}})

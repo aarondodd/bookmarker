@@ -1,7 +1,7 @@
 """Icon generation for Bookmarker system tray."""
 
 from PyQt6.QtCore import Qt, QRect, QPointF
-from PyQt6.QtGui import QPixmap, QPainter, QFont, QColor, QIcon, QPen, QBrush, QPainterPath
+from PyQt6.QtGui import QPixmap, QPainter, QFont, QColor, QIcon, QPen, QBrush, QPainterPath, QImage
 
 
 def generate_tray_icon(
@@ -22,10 +22,10 @@ def generate_tray_icon(
     Returns:
         QIcon ready for use as a system tray icon.
     """
-    pixmap = QPixmap(size, size)
-    pixmap.fill(Qt.GlobalColor.transparent)
+    image = QImage(size, size, QImage.Format.Format_ARGB32_Premultiplied)
+    image.fill(Qt.GlobalColor.transparent)
 
-    painter = QPainter(pixmap)
+    painter = QPainter(image)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
     margin = max(2, size // 8)
@@ -75,4 +75,5 @@ def generate_tray_icon(
 
     painter.end()
 
+    pixmap = QPixmap.fromImage(image)
     return QIcon(pixmap)
