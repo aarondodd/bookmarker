@@ -7,6 +7,7 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QMainWindow, QSystemTrayIcon, QMenu, QMessageBox, QApplication,
+    QFileDialog,
 )
 
 from .models.bookmark import BookmarkStore
@@ -16,7 +17,9 @@ from .operations.sync import SyncWorker, SyncAction, plan_sync, execute_sync
 from .operations.browser_detect import detect_browsers
 from .utils.config import (
     get_ui_config, set_ui_config, get_sync_config, create_default_config,
+    get_hotkey_config,
 )
+from .utils.hotkey import GlobalHotkeyManager, DEFAULT_HOTKEY, PYNPUT_AVAILABLE
 from .utils.icon import generate_tray_icon
 from .utils.theme import ThemeManager
 from .utils.updater import check_for_updates, upgrade
@@ -27,7 +30,13 @@ from .ui.sync_dialog import SyncProgressDialog
 from .ui.settings_dialog import SettingsDialog
 from .ui.quick_launch import QuickLaunchWindow
 from .utils.launcher import launch_bookmark
+from .utils.file_watcher import BookmarkFileWatcher
 from .models.bookmark import BookmarkType
+from .operations.store_export import (
+    export_store, plan_import, execute_import, ImportMode,
+)
+from .ui.import_mode_dialog import ImportModeDialog
+from .ui.import_preview_dialog import ImportPreviewDialog
 
 
 class UpgradeWorker(ImportWorker.__bases__[0]):
@@ -63,11 +72,30 @@ class BookmarkerApp(QMainWindow):
         dark = ui_config.get("dark_mode", False)
         ThemeManager.apply(dark)
 
+        # File watcher for external changes
+        self._file_watcher = BookmarkFileWatcher(self)
+        self._file_watcher.file_changed.connect(self._on_external_file_change)
+        self._file_watcher.start()
+
+        # Global hotkey for Quick Launch
+        self._hotkey_manager = None
+        self._setup_hotkey()
+
         # System tray
         self._setup_tray()
 
         # Auto-check for updates after 3 seconds
         QTimer.singleShot(3000, self._auto_check_for_updates)
+
+    def _setup_hotkey(self):
+        """Set up the global hotkey for Quick Launch."""
+        hotkey_config = get_hotkey_config()
+        enabled = hotkey_config.get("enabled", True)
+        shortcut = hotkey_config.get("shortcut", DEFAULT_HOTKEY)
+
+        if enabled and PYNPUT_AVAILABLE:
+            self._hotkey_manager = GlobalHotkeyManager(shortcut, self._open_quick_launch)
+            self._hotkey_manager.start()
 
     def _setup_tray(self):
         """Set up the system tray icon and context menu."""
@@ -100,6 +128,14 @@ class BookmarkerApp(QMainWindow):
 
         sync_action = menu.addAction("Sync")
         sync_action.triggered.connect(self._sync_bookmarks)
+
+        menu.addSeparator()
+
+        export_json_action = menu.addAction("Export Bookmarks to JSON...")
+        export_json_action.triggered.connect(self._export_json)
+
+        import_json_action = menu.addAction("Import Bookmarks from JSON...")
+        import_json_action.triggered.connect(self._import_json)
 
         menu.addSeparator()
 
@@ -228,7 +264,9 @@ class BookmarkerApp(QMainWindow):
 
     def _on_store_changed(self):
         """Handle store changes from the editor."""
+        self._file_watcher.pause()
         self.store.save()
+        self._file_watcher.resume()
 
     def _import_bookmarks(self):
         """Show browser selection dialog and import bookmarks."""
@@ -255,7 +293,9 @@ class BookmarkerApp(QMainWindow):
                                 f"Added: {added}, Skipped: {skipped}")
             else:
                 progress.finish(f"Import complete. Added: {added}, Skipped: {skipped}")
+            self._file_watcher.pause()
             self.store.save()
+            self._file_watcher.resume()
             if self._editor:
                 self._editor.refresh()
 
@@ -369,12 +409,156 @@ class BookmarkerApp(QMainWindow):
             ThemeManager.apply(dialog.is_dark_mode())
             self._update_tray_icon()
 
+            # Update hotkey
+            if dialog.is_hotkey_enabled() and PYNPUT_AVAILABLE:
+                shortcut = dialog.hotkey_shortcut()
+                if self._hotkey_manager is None:
+                    self._hotkey_manager = GlobalHotkeyManager(
+                        shortcut, self._open_quick_launch)
+                    self._hotkey_manager.start()
+                else:
+                    self._hotkey_manager.update_hotkey(shortcut)
+            elif self._hotkey_manager is not None:
+                self._hotkey_manager.stop()
+                self._hotkey_manager = None
+
     def _toggle_theme(self):
         """Toggle between dark and light mode."""
         dark = not ThemeManager.is_dark_mode()
         ThemeManager.apply(dark)
         set_ui_config({"dark_mode": dark})
         self._update_tray_icon()
+
+    def _on_external_file_change(self):
+        """Handle external modification of bookmarks.json."""
+        self._reload_store()
+        self._tray.showMessage(
+            "Bookmarks Reloaded",
+            "The bookmarks file was modified externally and has been reloaded.",
+            QSystemTrayIcon.MessageIcon.Information,
+            3000,
+        )
+
+    def _reload_store(self):
+        """Reload the store from disk and refresh UI."""
+        self.store = BookmarkStore.load()
+        if self._editor and self._editor.isVisible():
+            self._editor.store = self.store
+            self._editor.refresh()
+        if self._quick_launch and self._quick_launch.isVisible():
+            self._quick_launch.close()
+
+    def _export_json(self):
+        """Export bookmarks to a JSON file."""
+        from pathlib import Path
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            None,
+            "Export Bookmarks",
+            str(Path.home() / "bookmarks_export.json"),
+            "JSON Files (*.json);;All Files (*)",
+        )
+
+        if not file_path:
+            return
+
+        error = export_store(self.store, Path(file_path))
+        if error:
+            QMessageBox.critical(None, "Export Failed", error)
+        else:
+            QMessageBox.information(
+                None, "Export Complete",
+                f"Bookmarks exported to:\n{file_path}"
+            )
+
+    def _import_json(self):
+        """Import bookmarks from a JSON file."""
+        from pathlib import Path
+
+        file_path, _ = QFileDialog.getOpenFileName(
+            None,
+            "Import Bookmarks",
+            str(Path.home()),
+            "JSON Files (*.json);;All Files (*)",
+        )
+
+        if not file_path:
+            return
+
+        # Ask for import mode
+        mode_dialog = ImportModeDialog(None)
+        if mode_dialog.exec() != mode_dialog.DialogCode.Accepted:
+            return
+
+        mode = mode_dialog.selected_mode()
+
+        if mode == ImportMode.OVERWRITE:
+            # Confirm overwrite
+            result = QMessageBox.warning(
+                None,
+                "Confirm Overwrite",
+                "This will replace ALL your existing bookmarks with the imported file.\n\n"
+                "A backup will be created, but are you sure you want to continue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if result != QMessageBox.StandardButton.Yes:
+                return
+
+            # Execute overwrite import
+            preview, error = plan_import(self.store, Path(file_path))
+            if error:
+                QMessageBox.critical(None, "Import Failed", error)
+                return
+
+            self._file_watcher.pause()
+            added, updated, error = execute_import(self.store, preview, mode)
+            if error:
+                QMessageBox.critical(None, "Import Failed", error)
+                self._file_watcher.resume()
+                return
+
+            self.store.save()
+            self._file_watcher.resume()
+            self._reload_store()
+
+            QMessageBox.information(
+                None, "Import Complete",
+                f"Imported {added} bookmark(s)."
+            )
+        else:
+            # MERGE mode - show preview
+            preview, error = plan_import(self.store, Path(file_path))
+            if error:
+                QMessageBox.critical(None, "Import Failed", error)
+                return
+
+            if not preview.bookmarks_to_add and not preview.conflicts:
+                QMessageBox.information(
+                    None, "Nothing to Import",
+                    "All bookmarks in the file already exist in your collection."
+                )
+                return
+
+            preview_dialog = ImportPreviewDialog(preview, None)
+            if preview_dialog.exec() != preview_dialog.DialogCode.Accepted:
+                return
+
+            self._file_watcher.pause()
+            added, updated, error = execute_import(self.store, preview, mode)
+            if error:
+                QMessageBox.critical(None, "Import Failed", error)
+                self._file_watcher.resume()
+                return
+
+            self.store.save()
+            self._file_watcher.resume()
+            self._reload_store()
+
+            msg = f"Added {added} bookmark(s)"
+            if updated:
+                msg += f", updated {updated} bookmark(s)"
+            QMessageBox.information(None, "Import Complete", msg + ".")
 
     def _auto_check_for_updates(self):
         """Check for updates on startup (silent)."""
@@ -424,6 +608,9 @@ class BookmarkerApp(QMainWindow):
 
     def _quit(self):
         """Save and quit."""
+        if self._hotkey_manager is not None:
+            self._hotkey_manager.stop()
+        self._file_watcher.stop()
         self.store.save()
         self._tray.hide()
         QApplication.quit()
