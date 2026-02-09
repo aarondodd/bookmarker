@@ -2,7 +2,7 @@
 
 from typing import List, Optional
 
-from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QPoint, pyqtSignal
+from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QPoint, QTimer, pyqtSignal
 from PyQt6.QtGui import QKeyEvent, QIcon
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QListWidget, QListWidgetItem,
@@ -42,6 +42,7 @@ class QuickLaunchWindow(QWidget):
             Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+        self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
         self.setFixedSize(500, 400)
 
         # Center on screen
@@ -300,6 +301,12 @@ class QuickLaunchWindow(QWidget):
     def showEvent(self, event):
         """Focus search edit when shown."""
         super().showEvent(event)
+        # Defer focus to next event loop iteration so it takes effect
+        # after the window is fully shown and activated by the OS.
+        QTimer.singleShot(0, self._focus_search)
+
+    def _focus_search(self):
+        """Set keyboard focus to the search bar."""
         self._search_edit.setFocus()
         self._search_edit.selectAll()
 

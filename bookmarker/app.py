@@ -61,6 +61,7 @@ class BookmarkerApp(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Bookmarker")
+        self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
 
         self.store = BookmarkStore.load()
         self._editor: Optional[BookmarkEditorWindow] = None
