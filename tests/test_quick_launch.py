@@ -149,6 +149,8 @@ class TestQuickLaunchWindow:
             bm = Bookmark(title="Test", url="https://test.com", type=BookmarkType.URL)
             window._launch_bookmark(bm)
 
+        # Close is deferred via QTimer.singleShot(0, ...), process events
+        qapp.processEvents()
         assert len(closed_signal_received) == 1
 
     def test_escape_closes_window(self, qapp, store_with_data):

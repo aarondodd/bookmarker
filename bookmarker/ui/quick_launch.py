@@ -265,7 +265,9 @@ class QuickLaunchWindow(QWidget):
         """Launch a bookmark and close the window."""
         if launch_bookmark(bookmark):
             self.bookmark_launched.emit(bookmark)
-        self.close()
+        # Defer close to next event loop iteration so the double-click
+        # signal handler fully completes before the window is closed.
+        QTimer.singleShot(0, self.close)
 
     def keyPressEvent(self, event: QKeyEvent):
         """Handle key press events."""
