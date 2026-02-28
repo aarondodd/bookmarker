@@ -17,6 +17,7 @@ class BookmarkEditorWindow(QMainWindow):
 
     def __init__(self, store: BookmarkStore, parent=None):
         super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
         self.store = store
         self._current_item = None
 

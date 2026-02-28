@@ -61,6 +61,7 @@ class BookmarkerApp(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Bookmarker")
+        self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
 
         self.store = BookmarkStore.load()
         self._editor: Optional[BookmarkEditorWindow] = None
@@ -218,7 +219,10 @@ class BookmarkerApp(QMainWindow):
 
     def _on_quick_launch_closed(self):
         """Handle quick launch window closing."""
+        ql = self._quick_launch
         self._quick_launch = None
+        if ql is not None:
+            ql.deleteLater()
 
     def _open_editor(self):
         """Open the bookmark editor window."""
