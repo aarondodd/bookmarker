@@ -5,9 +5,11 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QFormLayout,
     QTreeWidget, QTreeWidgetItem, QLineEdit, QComboBox,
     QPushButton, QToolBar, QSplitter, QLabel, QMessageBox,
+    QStackedWidget, QListWidget, QListWidgetItem,
 )
 
 from ..models.bookmark import Bookmark, BookmarkType, BookmarkStore
+from ..utils.fuzzy import fuzzy_search
 
 
 class BookmarkEditorWindow(QMainWindow):
@@ -56,12 +58,33 @@ class BookmarkEditorWindow(QMainWindow):
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        # Left: tree view
+        # Left: search box above a stack of {tree, fuzzy results}.
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+
+        self._search_edit = QLineEdit()
+        self._search_edit.setPlaceholderText("Search bookmarks (fuzzy)...")
+        self._search_edit.setClearButtonEnabled(True)
+        self._search_edit.textChanged.connect(self._on_search_changed)
+        self._search_edit.returnPressed.connect(self._activate_top_result)
+        left_layout.addWidget(self._search_edit)
+
         self._tree = QTreeWidget()
         self._tree.setHeaderHidden(True)
         self._tree.setDragDropMode(QTreeWidget.DragDropMode.InternalMove)
         self._tree.currentItemChanged.connect(self._on_selection_changed)
-        splitter.addWidget(self._tree)
+
+        self._results_list = QListWidget()
+        self._results_list.currentItemChanged.connect(self._on_result_selected)
+        self._results_list.itemActivated.connect(lambda _i: self._focus_edit_panel())
+
+        self._left_stack = QStackedWidget()
+        self._left_stack.addWidget(self._tree)          # index 0: browse
+        self._left_stack.addWidget(self._results_list)  # index 1: search results
+        left_layout.addWidget(self._left_stack)
+
+        splitter.addWidget(left)
 
         # Right: edit panel
         edit_panel = QWidget()
@@ -111,6 +134,13 @@ class BookmarkEditorWindow(QMainWindow):
             self._add_children_to_tree(root_item, root_bm)
             root_item.setExpanded(True)
 
+        # Keep fuzzy results in sync after a mutation (without stealing the
+        # current selection/edit-panel state).
+        if getattr(self, "_search_edit", None) is not None:
+            text = self._search_edit.text().strip()
+            if text:
+                self._perform_search(text, select_first=False)
+
     def _add_children_to_tree(self, parent_item: QTreeWidgetItem,
                               parent_bm: Bookmark):
         """Recursively add bookmark children to the tree."""
@@ -124,6 +154,74 @@ class BookmarkEditorWindow(QMainWindow):
             if child.type == BookmarkType.FOLDER:
                 self._add_children_to_tree(item, child)
                 item.setExpanded(True)
+
+    # ------------------------------------------------------------------ search
+
+    def _iter_searchable(self):
+        """Flatten the store into (bookmark, folder_path) for all non-root
+        entries (bookmarks and folders), so a long listing is searchable."""
+        out = []
+
+        def walk(parent_bm, path):
+            for child in parent_bm.children:
+                out.append((child, path))
+                if child.type == BookmarkType.FOLDER:
+                    walk(child, f"{path}/{child.title}" if path else child.title)
+
+        for root_bm in self.store.roots.values():
+            walk(root_bm, root_bm.title)
+        return out
+
+    def _on_search_changed(self, text: str):
+        query = text.strip()
+        if not query:
+            self._left_stack.setCurrentIndex(0)  # back to tree
+            return
+        self._perform_search(query)
+
+    def _perform_search(self, query: str, select_first: bool = True):
+        entries = self._iter_searchable()
+        # Rank by title (primary) then folder path + url (secondary).
+        ranked = fuzzy_search(
+            query,
+            entries,
+            key=lambda e: (e[0].title, e[1], e[0].url),
+        )
+        self._results_list.blockSignals(True)
+        self._results_list.clear()
+        for (bm, path), _score in ranked:
+            label = f"[F] {bm.title}" if bm.type == BookmarkType.FOLDER else bm.title
+            second = path if bm.type == BookmarkType.FOLDER else f"{path}  ·  {bm.url}"
+            item = QListWidgetItem(f"{label}\n{second}")
+            item.setData(Qt.ItemDataRole.UserRole, bm.id)
+            item.setToolTip(bm.url or path)
+            self._results_list.addItem(item)
+        self._results_list.blockSignals(False)
+        self._left_stack.setCurrentIndex(1)
+        if select_first and self._results_list.count() > 0:
+            self._results_list.setCurrentRow(0)  # preview the top match
+
+    def _on_result_selected(self, current, previous):
+        if current is None:
+            return
+        bm_id = current.data(Qt.ItemDataRole.UserRole)
+        if bm_id:
+            # Mirror the selection into the tree so Delete/Move/Save still target
+            # the same bookmark, and let _on_selection_changed fill the edit panel.
+            self._select_bookmark_by_id(bm_id)
+
+    def _activate_top_result(self):
+        """Enter in the search box: jump into editing the highlighted result."""
+        if self._left_stack.currentIndex() != 1:
+            return
+        if self._results_list.currentItem() is None and self._results_list.count():
+            self._results_list.setCurrentRow(0)
+        if self._results_list.currentItem() is not None:
+            self._focus_edit_panel()
+
+    def _focus_edit_panel(self):
+        self._title_edit.setFocus()
+        self._title_edit.selectAll()
 
     def _update_folder_combo(self):
         """Update the folder dropdown with all available folders."""
@@ -206,6 +304,7 @@ class BookmarkEditorWindow(QMainWindow):
             url: The URL for the new bookmark.
             title: The title for the new bookmark.
         """
+        self._search_edit.clear()  # show the tree so the new item is visible
         parent_id = self._folder_combo.currentData()
         bm = Bookmark(title=title, url=url, type=BookmarkType.URL)
         self.store.add(bm, parent_id=parent_id)
@@ -242,6 +341,7 @@ class BookmarkEditorWindow(QMainWindow):
 
     def _add_folder(self):
         """Add a new folder."""
+        self._search_edit.clear()  # show the tree so the new folder is visible
         parent_id = self._folder_combo.currentData()
         folder = Bookmark(title="New Folder", type=BookmarkType.FOLDER)
         self.store.add(folder, parent_id=parent_id)

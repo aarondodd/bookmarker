@@ -105,16 +105,22 @@ The editor opens as a non-modal window with a 40/60 split:
 ```
 Toolbar: [+ Bookmark] [+ Folder] [Delete] [Move Up] [Move Down]
 +--------------------------+--------------------------------------+
-| Tree View (40%)          | Edit Panel (60%)                     |
-|                          |   Title: [_______________]           |
-| > Bookmarks Bar          |   URL:   [_______________]           |
-|   - Example.com          |   Folder: [dropdown      ]           |
-|   > Dev                  |   Open in: [Any browser  ]           |
-|     - GitHub             |                                      |
-| > Other Bookmarks        |   [Save Changes]                     |
+| Search: [ git________ ]  | Edit Panel (60%)                     |
+| GitHub                   |   Title: [_______________]           |
+|   Bookmarks Bar/Dev ...  |   URL:   [_______________]           |
+| GitLab                   |   Folder: [dropdown      ]           |
+|   Bookmarks Bar/Dev ...  |   Open in: [Any browser  ]           |
+|                          |                                      |
+|  (tree view when search  |   [Save Changes]                     |
+|   box is empty)          |                                      |
 +--------------------------+--------------------------------------+
 ```
 
+- Type in the **search box** to fuzzy-find bookmarks and folders across the whole
+  collection (matches title, folder path, and URL; ranked best-first). The top
+  match previews in the edit panel; click or press Enter to edit it. Clearing the
+  box restores the tree. Selecting a result also selects it in the tree, so
+  Delete / Move / Save act on it.
 - Select a bookmark in the tree to edit its properties
 - Use the toolbar to add bookmarks/folders, delete, or reorder
 - The "Open in" dropdown sets a preferred browser for that bookmark
