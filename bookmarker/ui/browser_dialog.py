@@ -43,7 +43,7 @@ class BrowserSelectionDialog(QDialog):
                 status = QLabel("(not installed)")
                 status.setStyleSheet("color: gray;")
                 row.addWidget(status)
-            elif browser.running and self.operation == "push":
+            elif browser.running and self.operation in ("push", "sync"):
                 status = QLabel("(running - close first)")
                 status.setStyleSheet("color: orange;")
                 row.addWidget(status)

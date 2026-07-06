@@ -37,6 +37,7 @@ class BrowserSyncController(QObject):
     connection_changed = pyqtSignal(bool)  # connected?
     status = pyqtSignal(str)               # human-readable status line
     store_updated = pyqtSignal()           # store changed by an inbound sync
+    sync_finished = pyqtSignal(str)        # a reconcile pass completed; summary
 
     # Internal: marshal a bridge-thread message onto the main thread.
     _inbound = pyqtSignal(dict)
@@ -137,7 +138,9 @@ class BrowserSyncController(QObject):
         if result.store_changed:
             self.store.save()
             self.store_updated.emit()
-        self.status.emit(
-            f"Synced ({len(result.ops)} browser change(s)"
-            f"{', store updated' if result.store_changed else ''})."
+        summary = (
+            f"Synced: {len(result.ops)} browser change(s)"
+            f"{', store updated' if result.store_changed else ''}."
         )
+        self.status.emit(summary)
+        self.sync_finished.emit(summary)

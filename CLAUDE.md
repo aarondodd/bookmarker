@@ -63,6 +63,10 @@ and attached to GitHub Releases by CI.
 - **Release cadence**: bump `bookmarker/version.py`, commit, `git tag vX.Y.Z &&
   git push origin vX.Y.Z`. Exercise via `workflow_dispatch` first to smoke the
   build without cutting a release.
+- `upgrade.ps1` (Windows, ported from meeting-notetaker): reads the installed
+  version from the Inno uninstall registry (AppId `{1F6B8A6C-...}_is1`, HKCU/HKLM),
+  compares to the latest release, downloads + runs the setup.exe silently. For
+  users who prefer a one-liner over the in-app updater.
 
 ## Self-update (`utils/updater.py`)
 
@@ -112,8 +116,13 @@ guide in `docs/browser-sync.md`.
   `key`, `background.js` service worker using `chrome.bookmarks`, popup, icons).
   Bundled into frozen builds via `bookmarker.spec` datas; extracted by installer.
 - **Wiring**: `main.py` dispatches `--native-host` before QApplication; `app.py`
-  starts the controller. The tray has a **Sync** submenu ("Sync Browser Now"
-  live + manual Import/Push/Two-Way "browser closed" actions); browser-sync
+  starts the controller. The tray has a **Sync** submenu: "Sync Browser via
+  Extension" (live; opens a `SyncProgressDialog` that follows `controller.status`
+  + `sync_finished` with a 20s timeout) + Direct "browser closed" actions (Import
+  from Browser Direct / Push to Browser Direct / Two-Way Sync Direct). Two-Way
+  Sync Direct prompts for the target browser (`BrowserSelectionDialog`
+  operation="sync"), aborts if it's open, and runs in a cancellable
+  `MultiSyncWorker` (`operations/sync.py`; debug mode stays inline). Browser-sync
   **setup + auto-sync live in Settings** (`ui/settings_dialog.py` Browser Sync
   group -- Set Up/Reinstall, Replace, status, auto-sync toggle). Local edits
   nudge `sync_now()` when auto-sync is on. Config: `[automation]` flat keys

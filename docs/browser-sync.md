@@ -52,8 +52,10 @@ this extension can drive the host.
 
 ## Using it
 
-- **Sync Browser Now** (tray menu -> **Sync** -> *Sync Browser Now*) -- one
-  reconcile pass against the connected browser.
+- **Sync Browser via Extension** (tray menu -> **Sync** -> *Sync Browser via
+  Extension*) -- one reconcile pass against the connected browser. A progress
+  popup shows status updates and the result (or a timeout hint if the extension
+  isn't reachable).
 - **Replace Browser with Bookmarker's** (Settings -> Browser Sync) -- wipes the
   browser's Bookmarks Bar + Other Bookmarks and recreates them from the store.
   Full one-way mirror.
@@ -61,10 +63,11 @@ this extension can drive the host.
   15 min). Also runs on connect and whenever you edit bookmarks in either the app
   or the browser.
 
-The tray **Sync** submenu also has the manual, file-based actions (**Import from
-Browser**, **Push to Browser (replace)**, **Two-Way Sync**) that operate on the
-browser's bookmark files directly -- those require the **browser to be closed**,
-unlike the live extension sync above.
+The tray **Sync** submenu also has the direct, file-based actions (**Import from
+Browser Direct**, **Push to Browser Direct**, **Two-Way Sync Direct**) that
+operate on the browser's bookmark files. These let you pick which browser to
+target, require the **browser to be closed** (they abort if it's open), and the
+two-way sync runs in a cancellable dialog -- unlike the live extension sync above.
 
 ## How sync resolves changes
 
