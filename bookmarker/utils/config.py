@@ -43,6 +43,31 @@ def get_backups_dir() -> Path:
     return backups_dir
 
 
+def automation_dir() -> Path:
+    """Directory holding the unpacked extension + native-host manifest + state."""
+    path = get_config_dir() / "automation"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def extension_dir() -> Path:
+    """The unpacked extension folder the user loads via chrome://extensions."""
+    path = automation_dir() / "extension"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def bridge_handshake_path() -> Path:
+    """Loopback port + auth token, written by the running app for the native
+    host to read. JSON: {"port": int, "token": str, "pid": int}."""
+    return automation_dir() / "bridge.json"
+
+
+def idmap_path(browser: str) -> Path:
+    """Per-browser store-GUID <-> browser-node-id map used by two-way sync."""
+    return automation_dir() / f"idmap-{browser}.json"
+
+
 def load_config() -> Dict[str, Any]:
     """Load configuration from the config file."""
     config_file = get_config_file()
@@ -129,6 +154,20 @@ def set_hotkey_config(settings: Dict[str, Any]) -> Optional[str]:
     """Set hotkey configuration settings."""
     config = load_config()
     config["hotkey"] = settings
+    return save_config(config)
+
+
+def get_automation_config() -> Dict[str, Any]:
+    """Get browser-sync automation settings (flat scalars only -- the TOML
+    writer does not support nested tables)."""
+    config = load_config()
+    return config.get("automation", {})
+
+
+def set_automation_config(settings: Dict[str, Any]) -> Optional[str]:
+    """Set browser-sync automation settings."""
+    config = load_config()
+    config["automation"] = settings
     return save_config(config)
 
 

@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Bookmarker Sync",
+  "version": "0.1.0",
+  "description": "Keeps this browser's bookmarks in sync with the Bookmarker desktop app.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxzUbuKHCEHGzJWzK5s0QYK/+zIguogxirKQMQQ8AslnqyECippmEkA1sgCK2rBE/5PrlOMKtMjY1eyY0jIH/R8sKbbNx2I0N5ErHQeiysKWOze7vVesBZl+iDC1fSrSnnt3ZFtQX7g4IUPDRTFMu4baJCunFnmM6B1vfcfClmaegSqm2iP+MF2/gd9Q2k1EycPiMrgs1dQyQW7yIbcbz0+RCAQ9mx9HscrDLtY7JTqbM7PYDyjo2C7O0H1RCeYlZEI4KL/NRIsdRyOGJJjJdiQFnqoBSCkpWFsTNcr/a2CFYJaiauPiBOA+n1FI/YvSl9wT5Fp7O9rU55CmzGS6cFQIDAQAB",
+  "minimum_chrome_version": "120",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Bookmarker Sync",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "bookmarks",
+    "nativeMessaging",
+    "storage",
+    "alarms"
+  ]
+}

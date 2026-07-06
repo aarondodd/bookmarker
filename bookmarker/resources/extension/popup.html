@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font: 13px system-ui, sans-serif; width: 240px; margin: 0; padding: 12px; }
+    h1 { font-size: 14px; margin: 0 0 8px; }
+    .status { padding: 6px 8px; border-radius: 6px; margin-bottom: 10px; }
+    .ok { background: #e6f4ea; color: #1e6b32; }
+    .bad { background: #fce8e6; color: #a50e0e; }
+    button { display: block; width: 100%; padding: 7px; margin-top: 6px; cursor: pointer; }
+    .hint { color: #666; font-size: 11px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h1>Bookmarker Sync</h1>
+  <div id="status" class="status bad">Checking...</div>
+  <button id="sync">Sync now</button>
+  <button id="reconnect">Reconnect to app</button>
+  <div class="hint">Full "replace browser with Bookmarker's" is run from the Bookmarker app's Browser Sync menu.</div>
+  <script src="popup.js"></script>
+</body>
+</html>

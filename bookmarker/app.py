@@ -22,7 +22,12 @@ from .utils.config import (
 from .utils.hotkey import GlobalHotkeyManager, DEFAULT_HOTKEY, PYNPUT_AVAILABLE
 from .utils.icon import generate_tray_icon
 from .utils.theme import ThemeManager
-from .utils.updater import check_for_updates, upgrade
+from .utils.updater import (
+    check_for_updates,
+    upgrade,
+    cleanup_stale_bundle,
+    prune_updates_cache,
+)
 from .ui.editor import BookmarkEditorWindow
 from .ui.browser_dialog import BrowserSelectionDialog
 from .ui.debug_dialog import DebugConfirmDialog
@@ -37,6 +42,9 @@ from .operations.store_export import (
 )
 from .ui.import_mode_dialog import ImportModeDialog
 from .ui.import_preview_dialog import ImportPreviewDialog
+from .ui.browser_sync_dialog import BrowserSyncDialog
+from .automation.controller import BrowserSyncController
+from .utils.config import get_automation_config
 
 
 class UpgradeWorker(ImportWorker.__bases__[0]):
@@ -63,6 +71,11 @@ class BookmarkerApp(QMainWindow):
         self.setWindowTitle("Bookmarker")
         self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
 
+        # Clean up after any previous self-upgrade: drop the leftover
+        # <bundle>.old dir (Linux dir-swap) and bound the downloaded-asset cache.
+        cleanup_stale_bundle()
+        prune_updates_cache(keep_newest=1)
+
         self.store = BookmarkStore.load()
         self._editor: Optional[BookmarkEditorWindow] = None
         self._sync_dialog: Optional[SyncProgressDialog] = None
@@ -84,6 +97,20 @@ class BookmarkerApp(QMainWindow):
 
         # System tray
         self._setup_tray()
+
+        # Browser-sync controller (native-messaging bridge to the extension).
+        self._sync_controller = BrowserSyncController(self.store, self)
+        self._sync_controller.store_updated.connect(self._reload_store)
+        self._sync_controller.connection_changed.connect(self._on_sync_connection)
+        try:
+            self._sync_controller.start()
+        except OSError:
+            pass  # port bind failure shouldn't stop the app
+        auto_cfg = get_automation_config()
+        self._sync_controller.set_auto_sync(
+            bool(auto_cfg.get("auto_sync", False)),
+            int(auto_cfg.get("interval_minutes", 15)),
+        )
 
         # Auto-check for updates after 3 seconds
         QTimer.singleShot(3000, self._auto_check_for_updates)
@@ -129,6 +156,9 @@ class BookmarkerApp(QMainWindow):
 
         sync_action = menu.addAction("Sync")
         sync_action.triggered.connect(self._sync_bookmarks)
+
+        browser_sync_action = menu.addAction("Browser Sync (live)...")
+        browser_sync_action.triggered.connect(self._open_browser_sync)
 
         menu.addSeparator()
 
@@ -271,6 +301,25 @@ class BookmarkerApp(QMainWindow):
         self._file_watcher.pause()
         self.store.save()
         self._file_watcher.resume()
+        self._maybe_autosync()
+
+    def _open_browser_sync(self):
+        """Open the Browser Sync setup + control dialog."""
+        dialog = BrowserSyncDialog(self._sync_controller, self)
+        dialog.exec()
+
+    def _on_sync_connection(self, connected: bool):
+        """Reflect the live browser-sync connection in the tray tooltip."""
+        suffix = " (browser linked)" if connected else ""
+        self._tray.setToolTip(f"Bookmarker{suffix}")
+
+    def _maybe_autosync(self):
+        """Push local store changes to the browser when auto-sync is on."""
+        controller = getattr(self, "_sync_controller", None)
+        if controller is None or not controller.is_connected:
+            return
+        if get_automation_config().get("auto_sync", False):
+            controller.sync_now()
 
     def _import_bookmarks(self):
         """Show browser selection dialog and import bookmarks."""
@@ -446,6 +495,9 @@ class BookmarkerApp(QMainWindow):
     def _reload_store(self):
         """Reload the store from disk and refresh UI."""
         self.store = BookmarkStore.load()
+        # Keep the sync controller pointed at the current store object.
+        if getattr(self, "_sync_controller", None) is not None:
+            self._sync_controller.store = self.store
         if self._editor and self._editor.isVisible():
             self._editor.store = self.store
             self._editor.refresh()
@@ -614,6 +666,8 @@ class BookmarkerApp(QMainWindow):
         """Save and quit."""
         if self._hotkey_manager is not None:
             self._hotkey_manager.stop()
+        if getattr(self, "_sync_controller", None) is not None:
+            self._sync_controller.stop()
         self._file_watcher.stop()
         self.store.save()
         self._tray.hide()
