@@ -1,6 +1,11 @@
 #
 # Build script for Bookmarker (Windows)
-# Creates a single-file executable using PyInstaller
+# Produces a PyInstaller --onedir bundle at dist\bookmarker\ from bookmarker.spec.
+#
+# This only builds -- it leaves the bundle in dist\ and installs nothing. Normal
+# users install via the Inno Setup installer (installer.iss wraps dist\bookmarker\;
+# CI in .github/workflows/release.yml builds it there). For a local run, launch
+# dist\bookmarker\bookmarker.exe directly.
 #
 
 $ErrorActionPreference = "Stop"
@@ -10,7 +15,8 @@ $AppName = "bookmarker"
 $DistDir = Join-Path $ScriptDir "dist"
 $BuildDir = Join-Path $ScriptDir "build"
 $VenvDir = Join-Path $ScriptDir ".venv"
-$BinDir = Join-Path $env:USERPROFILE "bin"
+$BundleDir = Join-Path $DistDir $AppName
+$ExePath = Join-Path $BundleDir "$AppName.exe"
 
 Write-Host "=== Bookmarker Build Script ===" -ForegroundColor Cyan
 Write-Host ""
@@ -38,56 +44,21 @@ Write-Host "Cleaning previous builds..."
 if (Test-Path $DistDir) { Remove-Item -Recurse -Force $DistDir }
 if (Test-Path $BuildDir) { Remove-Item -Recurse -Force $BuildDir }
 
-# Run PyInstaller
-Write-Host "Building executable with PyInstaller..."
+# Run PyInstaller (all config lives in bookmarker.spec)
+Write-Host "Building onedir bundle with PyInstaller..."
 Set-Location $ScriptDir
-
-pyinstaller `
-    --name $AppName `
-    --onefile `
-    --windowed `
-    --noconfirm `
-    --clean `
-    --hidden-import=PyQt6 `
-    --hidden-import=PyQt6.QtCore `
-    --hidden-import=PyQt6.QtGui `
-    --hidden-import=PyQt6.QtWidgets `
-    --collect-all=PyQt6 `
-    main.py
+pyinstaller --noconfirm --clean (Join-Path $ScriptDir "bookmarker.spec")
 
 # Check if build succeeded
-$ExePath = Join-Path $DistDir "$AppName.exe"
 if (-not (Test-Path $ExePath)) {
-    Write-Host "ERROR: Build failed - executable not found" -ForegroundColor Red
+    Write-Host "ERROR: Build failed - launcher not found at $ExePath" -ForegroundColor Red
     exit 1
 }
 
 Write-Host ""
 Write-Host "Build successful!" -ForegroundColor Green
-Write-Host "Executable: $ExePath"
-
-# Create ~/bin if it doesn't exist
-if (-not (Test-Path $BinDir)) {
-    Write-Host "Creating $BinDir..."
-    New-Item -ItemType Directory -Path $BinDir | Out-Null
-}
-
-# Copy to ~/bin
-$DestPath = Join-Path $BinDir "$AppName.exe"
-$OldPath = Join-Path $BinDir "$AppName.exe.old"
-Write-Host "Installing to $DestPath..."
-if (Test-Path $OldPath) {
-    try { Remove-Item -Force $OldPath -ErrorAction SilentlyContinue } catch { }
-}
-if (Test-Path $DestPath) {
-    try { Rename-Item $DestPath $OldPath -ErrorAction SilentlyContinue } catch { }
-}
-Copy-Item $ExePath $DestPath -Force
-
+Write-Host "Bundle: $BundleDir"
+Write-Host "Launcher: $ExePath"
 Write-Host ""
-Write-Host "=== Installation Complete ===" -ForegroundColor Cyan
-Write-Host "Executable installed to: $DestPath"
-Write-Host ""
-Write-Host "Make sure $BinDir is in your PATH."
-Write-Host "You can add it via System Properties > Environment Variables"
-Write-Host ""
+Write-Host "Package it with installer.iss (Inno Setup) to produce the installer,"
+Write-Host "or run the launcher above directly for a local test."

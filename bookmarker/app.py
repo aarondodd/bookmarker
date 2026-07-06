@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
 from .models.bookmark import BookmarkStore
 from .operations.importer import ImportWorker
 from .operations.exporter import ExportWorker
-from .operations.sync import SyncWorker, SyncAction, plan_sync, execute_sync
+from .operations.sync import MultiSyncWorker, plan_sync, execute_sync
 from .operations.browser_detect import detect_browsers
 from .utils.config import (
     get_ui_config, set_ui_config, get_sync_config, create_default_config,
@@ -22,7 +22,12 @@ from .utils.config import (
 from .utils.hotkey import GlobalHotkeyManager, DEFAULT_HOTKEY, PYNPUT_AVAILABLE
 from .utils.icon import generate_tray_icon
 from .utils.theme import ThemeManager
-from .utils.updater import check_for_updates, upgrade
+from .utils.updater import (
+    check_for_updates,
+    upgrade,
+    cleanup_stale_bundle,
+    prune_updates_cache,
+)
 from .ui.editor import BookmarkEditorWindow
 from .ui.browser_dialog import BrowserSelectionDialog
 from .ui.debug_dialog import DebugConfirmDialog
@@ -37,6 +42,8 @@ from .operations.store_export import (
 )
 from .ui.import_mode_dialog import ImportModeDialog
 from .ui.import_preview_dialog import ImportPreviewDialog
+from .automation.controller import BrowserSyncController
+from .utils.config import get_automation_config
 
 
 class UpgradeWorker(ImportWorker.__bases__[0]):
@@ -63,6 +70,11 @@ class BookmarkerApp(QMainWindow):
         self.setWindowTitle("Bookmarker")
         self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
 
+        # Clean up after any previous self-upgrade: drop the leftover
+        # <bundle>.old dir (Linux dir-swap) and bound the downloaded-asset cache.
+        cleanup_stale_bundle()
+        prune_updates_cache(keep_newest=1)
+
         self.store = BookmarkStore.load()
         self._editor: Optional[BookmarkEditorWindow] = None
         self._sync_dialog: Optional[SyncProgressDialog] = None
@@ -84,6 +96,20 @@ class BookmarkerApp(QMainWindow):
 
         # System tray
         self._setup_tray()
+
+        # Browser-sync controller (native-messaging bridge to the extension).
+        self._sync_controller = BrowserSyncController(self.store, self)
+        self._sync_controller.store_updated.connect(self._reload_store)
+        self._sync_controller.connection_changed.connect(self._on_sync_connection)
+        try:
+            self._sync_controller.start()
+        except OSError:
+            pass  # port bind failure shouldn't stop the app
+        auto_cfg = get_automation_config()
+        self._sync_controller.set_auto_sync(
+            bool(auto_cfg.get("auto_sync", False)),
+            int(auto_cfg.get("interval_minutes", 15)),
+        )
 
         # Auto-check for updates after 3 seconds
         QTimer.singleShot(3000, self._auto_check_for_updates)
@@ -121,14 +147,21 @@ class BookmarkerApp(QMainWindow):
 
         menu.addSeparator()
 
-        import_action = menu.addAction("Import Bookmarks")
+        # Sync submenu: live (extension) + manual (browser closed) actions.
+        # Browser-sync SETUP lives in Settings, not here.
+        sync_menu = menu.addMenu("Sync")
+
+        sync_menu.addSection("Live sync (extension)")
+        sync_now_action = sync_menu.addAction("Sync Browser via Extension")
+        sync_now_action.triggered.connect(self._sync_browser_now)
+
+        sync_menu.addSection("Direct (close the browser first)")
+        import_action = sync_menu.addAction("Import from Browser Direct...")
         import_action.triggered.connect(self._import_bookmarks)
-
-        push_action = menu.addAction("Push Bookmarks")
+        push_action = sync_menu.addAction("Push to Browser Direct...")
         push_action.triggered.connect(self._push_bookmarks)
-
-        sync_action = menu.addAction("Sync")
-        sync_action.triggered.connect(self._sync_bookmarks)
+        twoway_action = sync_menu.addAction("Two-Way Sync Direct...")
+        twoway_action.triggered.connect(self._sync_bookmarks)
 
         menu.addSeparator()
 
@@ -271,6 +304,87 @@ class BookmarkerApp(QMainWindow):
         self._file_watcher.pause()
         self.store.save()
         self._file_watcher.resume()
+        self._maybe_autosync()
+
+    def _sync_browser_now(self):
+        """Trigger a live browser sync via the extension bridge, with a progress
+        popup that shows status updates + the result."""
+        controller = getattr(self, "_sync_controller", None)
+        if controller is None or not controller.is_connected:
+            QMessageBox.information(
+                self, "Browser Sync",
+                "No browser is connected.\n\n"
+                "Set up Browser Sync in Settings, then load the unpacked extension "
+                "in Chrome/Edge and make sure the browser is open.")
+            return
+
+        progress = SyncProgressDialog("Sync Browser via Extension", self)
+        progress.set_status("Requesting bookmarks from the browser...")
+        self._update_tray_icon("syncing")
+
+        # Guard so only the first terminal event (result or timeout) finishes it.
+        state = {"done": False}
+        timeout = QTimer(progress)
+        timeout.setSingleShot(True)
+
+        def cleanup():
+            try:
+                controller.status.disconnect(on_status)
+            except TypeError:
+                pass
+            try:
+                controller.sync_finished.disconnect(on_done)
+            except TypeError:
+                pass
+
+        def on_status(msg):
+            if not state["done"]:
+                progress.set_status(msg)
+
+        def on_done(summary):
+            if state["done"]:
+                return
+            state["done"] = True
+            timeout.stop()
+            cleanup()
+            self._update_tray_icon("normal")
+            progress.finish(summary)
+
+        def on_timeout():
+            if state["done"]:
+                return
+            state["done"] = True
+            cleanup()
+            self._update_tray_icon("normal")
+            progress.finish(
+                "No response from the browser. Is the extension loaded and the "
+                "browser open?")
+
+        controller.status.connect(on_status)
+        controller.sync_finished.connect(on_done)
+        timeout.timeout.connect(on_timeout)
+        timeout.start(20000)
+
+        progress.show()
+        if not controller.sync_now():
+            state["done"] = True
+            timeout.stop()
+            cleanup()
+            self._update_tray_icon("normal")
+            progress.finish("Could not reach the browser (send failed).")
+
+    def _on_sync_connection(self, connected: bool):
+        """Reflect the live browser-sync connection in the tray tooltip."""
+        suffix = " (browser linked)" if connected else ""
+        self._tray.setToolTip(f"Bookmarker{suffix}")
+
+    def _maybe_autosync(self):
+        """Push local store changes to the browser when auto-sync is on."""
+        controller = getattr(self, "_sync_controller", None)
+        if controller is None or not controller.is_connected:
+            return
+        if get_automation_config().get("auto_sync", False):
+            controller.sync_now()
 
     def _import_bookmarks(self):
         """Show browser selection dialog and import bookmarks."""
@@ -346,15 +460,66 @@ class BookmarkerApp(QMainWindow):
         self._export_worker.start()
 
     def _sync_bookmarks(self):
-        """Run bidirectional sync with all installed browsers."""
-        browsers = [b.name for b in detect_browsers() if b.installed]
-        if not browsers:
+        """Two-way sync (direct/file-based) with a chosen browser.
+
+        The user picks which installed browser(s) to sync; the target must be
+        closed. Non-debug runs happen in a cancellable worker thread.
+        """
+        if not any(b.installed for b in detect_browsers()):
             QMessageBox.information(self, "No Browsers", "No browsers detected.")
             return
 
-        debug_mode = get_sync_config().get("debug_mode", False)
+        dialog = BrowserSelectionDialog("Two-Way Sync (browser closed)", "sync", self)
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+        browsers = dialog.selected_browsers()
+        if not browsers:
+            return
 
-        progress = SyncProgressDialog("Syncing Bookmarks", self)
+        # The target browser must be closed -- abort (don't silently skip) so
+        # the user knows nothing happened.
+        running = [
+            b.display_name for b in detect_browsers()
+            if b.name in browsers and b.running
+        ]
+        if running:
+            QMessageBox.warning(
+                self, "Browser Running",
+                "Close these browser(s) before syncing, then try again:\n"
+                f"  {', '.join(running)}")
+            return
+
+        if get_sync_config().get("debug_mode", False):
+            self._run_two_way_sync_debug(browsers)
+        else:
+            self._run_two_way_sync(browsers)
+
+    def _run_two_way_sync(self, browsers):
+        """Cancellable two-way sync in a worker thread."""
+        progress = SyncProgressDialog("Two-Way Sync", self)
+        self._update_tray_icon("syncing")
+
+        worker = MultiSyncWorker(browsers, self.store)
+        self._twoway_worker = worker
+        progress.set_cancel_callback(worker.cancel)
+        worker.progress.connect(progress.set_status)
+
+        def on_finished(store_changes, browser_changes, errors):
+            self._update_tray_icon("normal")
+            error_msg = f"\nErrors: {errors}" if errors else ""
+            progress.finish(
+                f"Sync complete. Store changes: {store_changes}, "
+                f"Browser changes: {browser_changes}{error_msg}")
+            if self._editor:
+                self._editor.refresh()
+
+        worker.finished_sync.connect(on_finished)
+        progress.show()
+        worker.start()
+
+    def _run_two_way_sync_debug(self, browsers):
+        """Debug-mode two-way sync: confirm each change on the main thread."""
+        progress = SyncProgressDialog("Two-Way Sync (debug)", self)
         progress.show()
         self._update_tray_icon("syncing")
 
@@ -368,27 +533,24 @@ class BookmarkerApp(QMainWindow):
             if error:
                 errors.append(error)
                 continue
-
             if not actions:
                 progress.set_status(f"{browser_name}: Already in sync.")
                 continue
 
-            # Debug mode: confirm each action
-            if debug_mode:
-                approved = []
-                apply_all = False
-                for i, action in enumerate(actions):
-                    if apply_all:
-                        approved.append(action)
-                        continue
-                    dlg = DebugConfirmDialog(action, i + 1, len(actions), self)
-                    dlg.exec()
-                    if dlg.result_action == DebugConfirmDialog.APPLY:
-                        approved.append(action)
-                    elif dlg.result_action == DebugConfirmDialog.APPLY_ALL:
-                        approved.append(action)
-                        apply_all = True
-                actions = approved
+            approved = []
+            apply_all = False
+            for i, action in enumerate(actions):
+                if apply_all:
+                    approved.append(action)
+                    continue
+                dlg = DebugConfirmDialog(action, i + 1, len(actions), self)
+                dlg.exec()
+                if dlg.result_action == DebugConfirmDialog.APPLY:
+                    approved.append(action)
+                elif dlg.result_action == DebugConfirmDialog.APPLY_ALL:
+                    approved.append(action)
+                    apply_all = True
+            actions = approved
 
             progress.set_status(f"Applying {len(actions)} changes for {browser_name}...")
             sc, bc, err = execute_sync(self.store, browser_name, actions)
@@ -402,16 +564,21 @@ class BookmarkerApp(QMainWindow):
         progress.finish(
             f"Sync complete. Store changes: {total_store}, "
             f"Browser changes: {total_browser}{error_msg}")
-
         if self._editor:
             self._editor.refresh()
 
     def _open_settings(self):
         """Open the settings dialog."""
-        dialog = SettingsDialog(self)
+        dialog = SettingsDialog(self, controller=getattr(self, "_sync_controller", None))
         if dialog.exec() == dialog.DialogCode.Accepted:
             ThemeManager.apply(dialog.is_dark_mode())
             self._update_tray_icon()
+
+            # Apply auto-sync preference to the live controller.
+            if getattr(self, "_sync_controller", None) is not None:
+                self._sync_controller.set_auto_sync(
+                    dialog.is_auto_sync(), dialog.auto_sync_interval()
+                )
 
             # Update hotkey
             if dialog.is_hotkey_enabled() and PYNPUT_AVAILABLE:
@@ -446,6 +613,9 @@ class BookmarkerApp(QMainWindow):
     def _reload_store(self):
         """Reload the store from disk and refresh UI."""
         self.store = BookmarkStore.load()
+        # Keep the sync controller pointed at the current store object.
+        if getattr(self, "_sync_controller", None) is not None:
+            self._sync_controller.store = self.store
         if self._editor and self._editor.isVisible():
             self._editor.store = self.store
             self._editor.refresh()
@@ -614,6 +784,8 @@ class BookmarkerApp(QMainWindow):
         """Save and quit."""
         if self._hotkey_manager is not None:
             self._hotkey_manager.stop()
+        if getattr(self, "_sync_controller", None) is not None:
+            self._sync_controller.stop()
         self._file_watcher.stop()
         self.store.save()
         self._tray.hide()

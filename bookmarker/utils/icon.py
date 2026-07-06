@@ -6,8 +6,26 @@ from pathlib import Path
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap, QPainter, QColor, QIcon, QPen, QBrush, QPainterPath
 
+def _resolve_icon_source() -> Path:
+    """Locate the bundled bookmark.png, both from source and when frozen.
+
+    In a PyInstaller onedir/onefile build the module's __file__ points into
+    the frozen archive, so the package-relative path still resolves against
+    sys._MEIPASS; fall back to it explicitly if that lookup ever misses.
+    """
+    candidate = Path(__file__).parent / "bookmark.png"
+    if candidate.exists():
+        return candidate
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        bundled = Path(meipass) / "bookmarker" / "utils" / "bookmark.png"
+        if bundled.exists():
+            return bundled
+    return candidate
+
+
 # Pre-rendered bookmark icon bundled with the package
-_ICON_SOURCE = Path(__file__).parent / "bookmark.png"
+_ICON_SOURCE = _resolve_icon_source()
 
 _ICON_NAME = "bookmarker"
 

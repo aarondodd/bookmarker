@@ -81,14 +81,22 @@ Bookmarker runs as a system tray application. On launch, it loads (or creates) t
 | Action | Description |
 |---|---|
 | **Open Editor** | Opens the bookmark editor window (also accessible by double-clicking the tray icon) |
-| **Import Bookmarks** | Select browsers to import from; new bookmarks are added, duplicates skipped |
-| **Push Bookmarks** | Select browsers to push to; replaces browser bookmarks with the store contents |
-| **Sync** | Bidirectional sync with all installed browsers |
-| **Settings** | Configure dark mode and debug mode |
+| **Add Bookmark from Clipboard** | Creates a bookmark from the clipboard URL |
+| **Sync** submenu | See below |
+| **Settings** | Dark mode, debug mode, global hotkey, and Browser Sync setup |
 | **Toggle Dark/Light Mode** | Quick theme switch |
-| **Check for Updates** | Manual check against GitHub Releases |
-| **Upgrade** | Download and build the latest release |
+| **Check for Updates** / **Upgrade** | Check GitHub Releases / install the latest release |
 | **Exit** | Save and quit |
+
+The **Sync** submenu separates the live extension path from the direct
+(file-based) path:
+
+| Action | Description |
+|---|---|
+| **Sync Browser via Extension** | Live sync with a running browser via the extension (shows a progress popup with status + result). Setup is in Settings. |
+| **Import from Browser Direct...** | Read a chosen browser's bookmark files into the store (browser must be closed). |
+| **Push to Browser Direct...** | Replace a chosen browser's bookmarks with the store (browser must be closed). |
+| **Two-Way Sync Direct...** | Additive two-way sync with a chosen browser (browser must be closed). Runs in a cancellable dialog; aborts if the target browser is open. |
 
 ### Tray Icon States
 
@@ -105,16 +113,22 @@ The editor opens as a non-modal window with a 40/60 split:
 ```
 Toolbar: [+ Bookmark] [+ Folder] [Delete] [Move Up] [Move Down]
 +--------------------------+--------------------------------------+
-| Tree View (40%)          | Edit Panel (60%)                     |
-|                          |   Title: [_______________]           |
-| > Bookmarks Bar          |   URL:   [_______________]           |
-|   - Example.com          |   Folder: [dropdown      ]           |
-|   > Dev                  |   Open in: [Any browser  ]           |
-|     - GitHub             |                                      |
-| > Other Bookmarks        |   [Save Changes]                     |
+| Search: [ git________ ]  | Edit Panel (60%)                     |
+| GitHub                   |   Title: [_______________]           |
+|   Bookmarks Bar/Dev ...  |   URL:   [_______________]           |
+| GitLab                   |   Folder: [dropdown      ]           |
+|   Bookmarks Bar/Dev ...  |   Open in: [Any browser  ]           |
+|                          |                                      |
+|  (tree view when search  |   [Save Changes]                     |
+|   box is empty)          |                                      |
 +--------------------------+--------------------------------------+
 ```
 
+- Type in the **search box** to fuzzy-find bookmarks and folders across the whole
+  collection (matches title, folder path, and URL; ranked best-first). The top
+  match previews in the edit panel; click or press Enter to edit it. Clearing the
+  box restores the tree. Selecting a result also selects it in the tree, so
+  Delete / Move / Save act on it.
 - Select a bookmark in the tree to edit its properties
 - Use the toolbar to add bookmarks/folders, delete, or reorder
 - The "Open in" dropdown sets a preferred browser for that bookmark

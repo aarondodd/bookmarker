@@ -1,0 +1,141 @@
+name: Build release installers
+
+# Tag-driven build: pushing vX.Y.Z creates a GitHub Release (if one isn't
+# already there) and attaches, for that tag:
+#   - Windows: bookmarker-setup-X.Y.Z.exe        (Inno Setup installer)
+#   - Ubuntu:  bookmarker-linux-x86_64-X.Y.Z.tar.gz  (PyInstaller onedir bundle)
+# workflow_dispatch runs the same build pipeline for smoke-testing without
+# producing a release (the upload steps are gated on a tag ref).
+#
+# Release cadence: bump bookmarker/version.py, commit, then
+#   git tag vX.Y.Z && git push origin vX.Y.Z
+#
+# Cost: $0 on public repos. windows-latest / ubuntu minutes are unmetered for
+# public repos, and release-asset storage + bandwidth are unmetered. Nothing is
+# written to the 500 MB Actions-artifact quota (no upload-artifact calls).
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
+
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress
+        shell: pwsh
+
+      - name: Build PyInstaller onedir bundle
+        run: .\build.ps1
+        shell: pwsh
+
+      - name: Derive installer version
+        id: ver
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if ($tag -match '^v(.+)$') { $version = $matches[1] } else { $version = "0.0.0-dev" }
+          Write-Host "Installer version: $version"
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $iscc /DAppVersion=${{ steps.ver.outputs.version }} installer.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem Output
+
+      - name: Upload installer to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          # generate_release_notes=true populates the release body with
+          # auto-summarized commit + PR diffs since the previous tag.
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: Output/bookmarker-setup-${{ steps.ver.outputs.version }}.exe
+
+  linux:
+    # ubuntu-22.04 (not ubuntu-latest/24.04) so the PyInstaller bundle links
+    # against an older glibc and runs on a wider range of user machines. A build
+    # on 24.04 would refuse to start on 22.04 with GLIBC_2.3x-not-found errors.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
+
+      - name: Install Qt runtime libraries
+        # PyQt6 must import cleanly during the build (the spec's collect_all
+        # loads it); the headless runner lacks the shared libs Qt's platform
+        # plugins link against.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3 libglib2.0-0
+
+      - name: Build PyInstaller onedir bundle
+        run: ./build.sh
+
+      - name: Derive version
+        id: ver
+        run: |
+          tag="${{ github.ref_name }}"
+          if [[ "$tag" =~ ^v(.+)$ ]]; then version="${BASH_REMATCH[1]}"; else version="0.0.0-dev"; fi
+          echo "Release version: $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Package tarball
+        run: |
+          set -euo pipefail
+          ver="${{ steps.ver.outputs.version }}"
+          # Ship a tiny installer next to the bundle so users can symlink the
+          # launcher onto their PATH after extraction.
+          cat > dist/bookmarker/install.sh <<'EOF'
+          #!/usr/bin/env bash
+          # Install the extracted Bookmarker bundle for the current user.
+          set -euo pipefail
+          here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          dest="$HOME/.local/share/bookmarker"
+          bindir="$HOME/.local/bin"
+          rm -rf "$dest"
+          mkdir -p "$(dirname "$dest")" "$bindir"
+          cp -r "$here" "$dest"
+          ln -sfn "$dest/bookmarker" "$bindir/bookmarker"
+          echo "Installed to $dest; launcher symlinked at $bindir/bookmarker"
+          echo "Ensure $bindir is on your PATH."
+          EOF
+          chmod +x dist/bookmarker/install.sh
+          tar czf "bookmarker-linux-x86_64-${ver}.tar.gz" -C dist bookmarker
+          ls -la "bookmarker-linux-x86_64-${ver}.tar.gz"
+
+      - name: Upload tarball to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          fail_on_unmatched_files: true
+          files: bookmarker-linux-x86_64-${{ steps.ver.outputs.version }}.tar.gz

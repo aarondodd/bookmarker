@@ -287,3 +287,51 @@ class SyncWorker(QThread):
                 self.store, self.browser_name, self.approved_actions, self.bookmark_path
             )
             self.finished_sync.emit(store_changes, browser_changes, error or "")
+
+
+class MultiSyncWorker(QThread):
+    """Two-way sync across one or more selected browsers, cancellable between
+    steps. Plans + executes each browser in turn; ``cancel()`` stops before the
+    next plan or execute so an in-flight browser write is never interrupted
+    mid-file."""
+
+    progress = pyqtSignal(str)
+    finished_sync = pyqtSignal(int, int, str)  # store_changes, browser_changes, errors
+
+    def __init__(self, browser_names: List[str], store: BookmarkStore, parent=None):
+        super().__init__(parent)
+        self.browser_names = browser_names
+        self.store = store
+        self._cancelled = False
+
+    def cancel(self):
+        self._cancelled = True
+
+    def run(self):
+        total_store = 0
+        total_browser = 0
+        errors: List[str] = []
+
+        for name in self.browser_names:
+            if self._cancelled:
+                errors.append("Cancelled by user")
+                break
+            self.progress.emit(f"Planning sync with {name}...")
+            actions, _, error = plan_sync(self.store, name)
+            if error:
+                errors.append(f"{name}: {error}")
+                continue
+            if not actions:
+                self.progress.emit(f"{name}: already in sync.")
+                continue
+            if self._cancelled:
+                errors.append("Cancelled by user")
+                break
+            self.progress.emit(f"Applying {len(actions)} change(s) to {name}...")
+            sc, bc, err = execute_sync(self.store, name, actions)
+            total_store += sc
+            total_browser += bc
+            if err:
+                errors.append(f"{name}: {err}")
+
+        self.finished_sync.emit(total_store, total_browser, "; ".join(errors))

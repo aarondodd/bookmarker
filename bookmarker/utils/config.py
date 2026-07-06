@@ -1,9 +1,19 @@
 """Configuration management for Bookmarker.
 
-Stores configuration in ~/.bookmarker/config.toml
+Per-user profile directory (config + bookmark store + backups + automation):
+
+    Windows:      %APPDATA%\\Bookmarker\\
+    macOS:        ~/Library/Application Support/Bookmarker/
+    Linux/other:  $XDG_CONFIG_HOME/bookmarker/  (default ~/.config/bookmarker/)
+
+Set BOOKMARKER_DATA_DIR to override (tests / portable installs). A legacy
+~/.bookmarker profile from earlier builds is migrated to the new location on
+first access.
 """
 
 import os
+import shutil
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -13,12 +23,46 @@ try:
 except ImportError:
     import tomli as tomllib  # Fallback for older Python
 
+APP_NAME = "Bookmarker"
+
+
+def _standard_config_dir() -> Path:
+    """OS-appropriate profile directory (not yet created)."""
+    override = os.environ.get("BOOKMARKER_DATA_DIR")
+    if override:
+        return Path(override)
+    if sys.platform.startswith("win"):
+        base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+        return Path(base) / APP_NAME
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / APP_NAME
+    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(base) / "bookmarker"
+
+
+def _migrate_legacy_profile(target: Path) -> None:
+    """Move a legacy ~/.bookmarker profile into ``target`` once, if present and
+    ``target`` doesn't already exist. Best-effort."""
+    legacy = Path.home() / ".bookmarker"
+    try:
+        if (
+            legacy.is_dir()
+            and not target.exists()
+            and legacy.resolve() != target.resolve()
+        ):
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(legacy), str(target))
+    except OSError:
+        pass
+
 
 def get_config_dir() -> Path:
-    """Get the Bookmarker configuration directory."""
-    config_dir = Path.home() / ".bookmarker"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    return config_dir
+    """Get (and create) the Bookmarker profile directory, migrating a legacy
+    ~/.bookmarker profile into it once if present."""
+    path = _standard_config_dir()
+    _migrate_legacy_profile(path)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def get_config_file() -> Path:
@@ -41,6 +85,31 @@ def get_backups_dir() -> Path:
     backups_dir = get_config_dir() / "backups"
     backups_dir.mkdir(parents=True, exist_ok=True)
     return backups_dir
+
+
+def automation_dir() -> Path:
+    """Directory holding the unpacked extension + native-host manifest + state."""
+    path = get_config_dir() / "automation"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def extension_dir() -> Path:
+    """The unpacked extension folder the user loads via chrome://extensions."""
+    path = automation_dir() / "extension"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def bridge_handshake_path() -> Path:
+    """Loopback port + auth token, written by the running app for the native
+    host to read. JSON: {"port": int, "token": str, "pid": int}."""
+    return automation_dir() / "bridge.json"
+
+
+def idmap_path(browser: str) -> Path:
+    """Per-browser store-GUID <-> browser-node-id map used by two-way sync."""
+    return automation_dir() / f"idmap-{browser}.json"
 
 
 def load_config() -> Dict[str, Any]:
@@ -129,6 +198,20 @@ def set_hotkey_config(settings: Dict[str, Any]) -> Optional[str]:
     """Set hotkey configuration settings."""
     config = load_config()
     config["hotkey"] = settings
+    return save_config(config)
+
+
+def get_automation_config() -> Dict[str, Any]:
+    """Get browser-sync automation settings (flat scalars only -- the TOML
+    writer does not support nested tables)."""
+    config = load_config()
+    return config.get("automation", {})
+
+
+def set_automation_config(settings: Dict[str, Any]) -> Optional[str]:
+    """Set browser-sync automation settings."""
+    config = load_config()
+    config["automation"] = settings
     return save_config(config)
 
 
