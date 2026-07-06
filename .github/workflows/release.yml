@@ -45,8 +45,6 @@ jobs:
       - name: Build PyInstaller onedir bundle
         run: .\build.ps1
         shell: pwsh
-        env:
-          BOOKMARKER_NO_INSTALL: '1'
 
       - name: Derive installer version
         id: ver
@@ -102,8 +100,6 @@ jobs:
 
       - name: Build PyInstaller onedir bundle
         run: ./build.sh
-        env:
-          BOOKMARKER_NO_INSTALL: '1'
 
       - name: Derive version
         id: ver

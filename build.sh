@@ -3,10 +3,11 @@
 # Build script for Bookmarker (Linux / macOS)
 # Produces a PyInstaller --onedir bundle at dist/bookmarker/ from bookmarker.spec.
 #
-# By default it also installs the bundle for local use: the whole directory
-# goes to ~/.local/share/bookmarker/ and ~/bin/bookmarker is symlinked at the
-# launcher. Set BOOKMARKER_NO_INSTALL=1 to build only (CI uses this to produce
-# the release tarball without touching the developer's ~/bin).
+# This only builds -- it leaves the bundle in dist/ and installs nothing. Normal
+# users install from the release tarball (bookmarker-linux-x86_64-X.Y.Z.tar.gz),
+# which ships an install.sh that places the bundle under ~/.local/share/bookmarker
+# and symlinks ~/.local/bin/bookmarker. For a local run, launch
+# dist/bookmarker/bookmarker directly.
 #
 
 set -e
@@ -18,8 +19,6 @@ BUILD_DIR="$SCRIPT_DIR/build"
 VENV_DIR="$SCRIPT_DIR/.venv"
 BUNDLE_DIR="$DIST_DIR/$APP_NAME"
 LAUNCHER="$BUNDLE_DIR/$APP_NAME"
-INSTALL_DIR="$HOME/.local/share/$APP_NAME"
-BIN_DIR="$HOME/bin"
 
 echo "=== Bookmarker Build Script ==="
 echo ""
@@ -59,31 +58,8 @@ fi
 
 echo ""
 echo "Build successful!"
-echo "Bundle: $BUNDLE_DIR"
+echo "Bundle:   $BUNDLE_DIR"
 echo "Launcher: $LAUNCHER"
-
-if [ "${BOOKMARKER_NO_INSTALL:-}" = "1" ]; then
-    echo ""
-    echo "BOOKMARKER_NO_INSTALL=1 set - skipping local install."
-    exit 0
-fi
-
-# Install the whole onedir bundle for local use. A single-file copy no longer
-# works under --onedir, so install the directory and symlink the launcher.
 echo ""
-echo "Installing bundle to $INSTALL_DIR..."
-rm -rf "$INSTALL_DIR"
-mkdir -p "$(dirname "$INSTALL_DIR")"
-cp -r "$BUNDLE_DIR" "$INSTALL_DIR"
-
-mkdir -p "$BIN_DIR"
-ln -sfn "$INSTALL_DIR/$APP_NAME" "$BIN_DIR/$APP_NAME"
-
-echo ""
-echo "=== Installation Complete ==="
-echo "Bundle installed to: $INSTALL_DIR"
-echo "Launcher symlinked at: $BIN_DIR/$APP_NAME"
-echo ""
-echo "Make sure $BIN_DIR is in your PATH:"
-echo "  export PATH=\"\$HOME/bin:\$PATH\""
-echo ""
+echo "Run the launcher above directly for a local test, or package the release"
+echo "tarball via .github/workflows/release.yml."
