@@ -42,7 +42,6 @@ from .operations.store_export import (
 )
 from .ui.import_mode_dialog import ImportModeDialog
 from .ui.import_preview_dialog import ImportPreviewDialog
-from .ui.browser_sync_dialog import BrowserSyncDialog
 from .automation.controller import BrowserSyncController
 from .utils.config import get_automation_config
 
@@ -148,17 +147,21 @@ class BookmarkerApp(QMainWindow):
 
         menu.addSeparator()
 
-        import_action = menu.addAction("Import Bookmarks")
+        # Sync submenu: live (extension) + manual (browser closed) actions.
+        # Browser-sync SETUP lives in Settings, not here.
+        sync_menu = menu.addMenu("Sync")
+
+        sync_menu.addSection("Live sync (extension)")
+        sync_now_action = sync_menu.addAction("Sync Browser Now")
+        sync_now_action.triggered.connect(self._sync_browser_now)
+
+        sync_menu.addSection("Manual (close the browser first)")
+        import_action = sync_menu.addAction("Import from Browser...")
         import_action.triggered.connect(self._import_bookmarks)
-
-        push_action = menu.addAction("Push Bookmarks")
+        push_action = sync_menu.addAction("Push to Browser (replace)...")
         push_action.triggered.connect(self._push_bookmarks)
-
-        sync_action = menu.addAction("Sync")
-        sync_action.triggered.connect(self._sync_bookmarks)
-
-        browser_sync_action = menu.addAction("Browser Sync (live)...")
-        browser_sync_action.triggered.connect(self._open_browser_sync)
+        twoway_action = sync_menu.addAction("Two-Way Sync...")
+        twoway_action.triggered.connect(self._sync_bookmarks)
 
         menu.addSeparator()
 
@@ -303,10 +306,22 @@ class BookmarkerApp(QMainWindow):
         self._file_watcher.resume()
         self._maybe_autosync()
 
-    def _open_browser_sync(self):
-        """Open the Browser Sync setup + control dialog."""
-        dialog = BrowserSyncDialog(self._sync_controller, self)
-        dialog.exec()
+    def _sync_browser_now(self):
+        """Trigger a live browser sync via the extension bridge."""
+        controller = getattr(self, "_sync_controller", None)
+        if controller is not None and controller.is_connected:
+            controller.sync_now()
+            self._tray.showMessage(
+                "Browser Sync", "Syncing browser bookmarks...",
+                QSystemTrayIcon.MessageIcon.Information, 2000,
+            )
+        else:
+            self._tray.showMessage(
+                "Browser Sync",
+                "No browser connected. Set up Browser Sync in Settings, then load "
+                "the extension in Chrome/Edge.",
+                QSystemTrayIcon.MessageIcon.Warning, 4000,
+            )
 
     def _on_sync_connection(self, connected: bool):
         """Reflect the live browser-sync connection in the tray tooltip."""
@@ -457,10 +472,16 @@ class BookmarkerApp(QMainWindow):
 
     def _open_settings(self):
         """Open the settings dialog."""
-        dialog = SettingsDialog(self)
+        dialog = SettingsDialog(self, controller=getattr(self, "_sync_controller", None))
         if dialog.exec() == dialog.DialogCode.Accepted:
             ThemeManager.apply(dialog.is_dark_mode())
             self._update_tray_icon()
+
+            # Apply auto-sync preference to the live controller.
+            if getattr(self, "_sync_controller", None) is not None:
+                self._sync_controller.set_auto_sync(
+                    dialog.is_auto_sync(), dialog.auto_sync_interval()
+                )
 
             # Update hotkey
             if dialog.is_hotkey_enabled() and PYNPUT_AVAILABLE:

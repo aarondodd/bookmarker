@@ -112,9 +112,12 @@ guide in `docs/browser-sync.md`.
   `key`, `background.js` service worker using `chrome.bookmarks`, popup, icons).
   Bundled into frozen builds via `bookmarker.spec` datas; extracted by installer.
 - **Wiring**: `main.py` dispatches `--native-host` before QApplication; `app.py`
-  starts the controller, adds the "Browser Sync (live)..." tray item +
-  `ui/browser_sync_dialog.py`, and nudges `sync_now()` on local edits when auto-
-  sync is on. Config: `[automation]` flat keys (`auto_sync`, `interval_minutes`)
+  starts the controller. The tray has a **Sync** submenu ("Sync Browser Now"
+  live + manual Import/Push/Two-Way "browser closed" actions); browser-sync
+  **setup + auto-sync live in Settings** (`ui/settings_dialog.py` Browser Sync
+  group -- Set Up/Reinstall, Replace, status, auto-sync toggle). Local edits
+  nudge `sync_now()` when auto-sync is on. Config: `[automation]` flat keys
+  (`auto_sync`, `interval_minutes`)
   via `config.get/set_automation_config`; paths via `config.automation_dir()`
   etc.
 - **Tests**: `test_{protocol,bridge,tree_codec,sync_service,installer}.py` -- all

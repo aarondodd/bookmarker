@@ -34,7 +34,8 @@ extension (chrome.bookmarks)  <-- native messaging (stdio) -->  native host
 
 ## Setup (one time)
 
-1. In the Bookmarker tray menu, choose **Browser Sync (live)...**
+1. Open **Settings** from the Bookmarker tray menu and find the **Browser Sync
+   (live extension)** section.
 2. Click **Set Up / Reinstall**. This extracts the extension to
    `~/.bookmarker/automation/extension/` and registers the native-messaging host
    (per-browser manifest on Linux/macOS; HKCU registry on Windows).
@@ -42,7 +43,8 @@ extension (chrome.bookmarks)  <-- native messaging (stdio) -->  native host
    - Open `chrome://extensions` (or `edge://extensions`)
    - Enable **Developer mode**
    - **Load unpacked** -> select `~/.bookmarker/automation/extension/`
-4. The dialog shows **Browser: connected** once the extension links up.
+4. The Settings Browser Sync section shows **Browser: connected** once the
+   extension links up.
 
 The extension ID is pinned (`cckjffdjcffgggmdjamiabnpebegdmcg`) via a fixed
 manifest `key`, and the native host's `allowed_origins` is pinned to it, so only
@@ -50,11 +52,19 @@ this extension can drive the host.
 
 ## Using it
 
-- **Replace Browser with Bookmarker's** -- wipes the browser's Bookmarks Bar +
-  Other Bookmarks and recreates them from the store. Full one-way mirror.
-- **Sync Now** -- one reconcile pass.
-- **Automatic sync** -- toggle + interval (default 15 min). Also runs on connect
-  and whenever you edit bookmarks in either the app or the browser.
+- **Sync Browser Now** (tray menu -> **Sync** -> *Sync Browser Now*) -- one
+  reconcile pass against the connected browser.
+- **Replace Browser with Bookmarker's** (Settings -> Browser Sync) -- wipes the
+  browser's Bookmarks Bar + Other Bookmarks and recreates them from the store.
+  Full one-way mirror.
+- **Automatic sync** (Settings -> Browser Sync) -- toggle + interval (default
+  15 min). Also runs on connect and whenever you edit bookmarks in either the app
+  or the browser.
+
+The tray **Sync** submenu also has the manual, file-based actions (**Import from
+Browser**, **Push to Browser (replace)**, **Two-Way Sync**) that operate on the
+browser's bookmark files directly -- those require the **browser to be closed**,
+unlike the live extension sync above.
 
 ## How sync resolves changes
 
